@@ -59,4 +59,49 @@ class IncidentControllerTest {
             .content("{\"status\":\"OPEN\"}"))
             .andExpect(status().isConflict());
     }
+    @Test void validationErrorsNameTheBadFields() throws Exception {
+        mvc.perform(post("/api/incidents").contentType("application/json")
+            .content("{\"title\":\"\",\"description\":\"x\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error").value("Invalid incident payload"))
+            .andExpect(jsonPath("$.fields.title").exists())
+            .andExpect(jsonPath("$.fields.severity").exists())
+            .andExpect(jsonPath("$.fields.description").doesNotExist());
+    }
+    @Test void rejectsOverlongTitle() throws Exception {
+        String longTitle = "t".repeat(121);
+        mvc.perform(post("/api/incidents").contentType("application/json")
+            .content("{\"title\":\"" + longTitle + "\",\"description\":\"x\",\"severity\":\"LOW\"}"))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.title").exists());
+    }
+    @Test void malformedJsonAndBadFiltersAreBadRequests() throws Exception {
+        mvc.perform(post("/api/incidents").contentType("application/json").content("{not json"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/incidents?status=BOGUS")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/incidents?severity=BOGUS")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/incidents?page=-1")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/incidents/abc")).andExpect(status().isBadRequest());
+    }
+    @Test void statusUpdateOnMissingIncidentIsNotFound() throws Exception {
+        mvc.perform(patch("/api/incidents/{id}/status", 999999).contentType("application/json")
+            .content("{\"status\":\"INVESTIGATING\"}")).andExpect(status().isNotFound());
+        long id = create();
+        mvc.perform(patch("/api/incidents/{id}/status", id).contentType("application/json")
+            .content("{\"status\":\"BOGUS\"}")).andExpect(status().isBadRequest());
+        mvc.perform(patch("/api/incidents/{id}/status", id).contentType("application/json")
+            .content("{}")).andExpect(status().isBadRequest());
+    }
+    @Test void resolvedStaysResolvedOnRepeat() throws Exception {
+        long id = create();
+        for (int i = 0; i < 2; i++)
+            mvc.perform(patch("/api/incidents/{id}/status", id).contentType("application/json")
+                .content("{\"status\":\"RESOLVED\"}")).andExpect(status().isOk());
+    }
+    @Test void newestIncidentsComeFirst() throws Exception {
+        long first = create();
+        long second = create();
+        mvc.perform(get("/api/incidents")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.content[0].id").value((int) second))
+            .andExpect(jsonPath("$.content[1].id").value((int) first));
+    }
 }
