@@ -61,5 +61,10 @@ public class IncidentController {
 
     @ExceptionHandler(org.springframework.web.bind.MethodArgumentNotValidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Map<String, String> validationError() { return Map.of("error", "Invalid incident payload"); }
+    public Map<String, Object> validationError(org.springframework.web.bind.MethodArgumentNotValidException ex) {
+        Map<String, String> fields = new java.util.TreeMap<>();
+        ex.getBindingResult().getFieldErrors()
+            .forEach(e -> fields.putIfAbsent(e.getField(), e.getDefaultMessage()));
+        return Map.of("error", "Invalid incident payload", "fields", fields);
+    }
 }
