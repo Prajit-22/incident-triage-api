@@ -104,4 +104,20 @@ class IncidentControllerTest {
             .andExpect(jsonPath("$.content[0].id").value((int) second))
             .andExpect(jsonPath("$.content[1].id").value((int) first));
     }
+    @Test void rejectsPaginationOffsetsBeyondJpaLimit() throws Exception {
+        mvc.perform(get("/api/incidents?page=2147483647&size=100"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/incidents?page=21474837&size=100&status=OPEN"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/incidents?page=21474837&size=100&severity=HIGH"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/incidents?page=21474837&size=100&status=OPEN&severity=HIGH"))
+            .andExpect(status().isBadRequest());
+    }
+    @Test void acceptsLargePagesWithinJpaOffsetLimit() throws Exception {
+        mvc.perform(get("/api/incidents?page=21474836&size=100"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.content").isEmpty());
+        mvc.perform(get("/api/incidents?page=2147483647&size=1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.content").isEmpty());
+    }
 }
