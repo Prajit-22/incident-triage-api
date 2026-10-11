@@ -24,12 +24,15 @@ curl -i -X POST http://localhost:8080/api/incidents \
 curl 'http://localhost:8080/api/incidents?severity=HIGH&status=OPEN&page=0&size=20'
 curl http://localhost:8080/api/incidents/1
 
+# Triage overview: counts by status and severity
+curl http://localhost:8080/api/incidents/summary
+
 # Change status (OPEN, INVESTIGATING, RESOLVED)
 curl -i -X PATCH http://localhost:8080/api/incidents/1/status \
   -H 'Content-Type: application/json' -d '{"status":"INVESTIGATING"}'
 ```
 
-Severities: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`. Invalid payloads, enum values, and page sizes return 400. A payload that fails validation gets `{"error": "Invalid incident payload", "fields": {"title": "..."}}`, naming each bad field; missing IDs return 404; reopening a resolved incident returns 409. Pagination is capped at 100 rows per page. The offset (`page * size`) must not exceed 2,147,483,647, the JPA limit; larger offsets return 400 rather than a server error. Results are sorted by newest timestamp and ID.
+Severities: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`. Invalid payloads, enum values, and page sizes return 400. A payload that fails validation gets `{"error": "Invalid incident payload", "fields": {"title": "..."}}`, naming each bad field; missing IDs return 404; reopening a resolved incident returns 409. Pagination is capped at 100 rows per page. The offset (`page * size`) must not exceed 2,147,483,647, the JPA limit; larger offsets return 400 rather than a server error. Results are sorted by newest timestamp and ID. `GET /api/incidents/summary` returns `{"total", "byStatus", "bySeverity"}`; every status and severity appears, with 0 when none match.
 
 ## Test
 
@@ -37,7 +40,7 @@ Severities: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`. Invalid payloads, enum values, 
 mvn verify
 ```
 
-Thirteen MockMvc integration tests exercise create/read, input validation (including per-field error messages and the title length limit), malformed JSON and bad filter values, missing records and pagination (including oversized offsets and accepted boundary values), combined filters, newest-first ordering, and the status lifecycle against an in-memory H2 database. CI runs the same tests on Java 11 and 17. This is not an AI classifier; severities are supplied by the caller and the API does not automatically assess threats.
+Fifteen MockMvc integration tests exercise create/read, input validation (including per-field error messages and the title length limit), malformed JSON and bad filter values, missing records and pagination (including oversized offsets and accepted boundary values), combined filters, newest-first ordering, the summary counts (empty and populated), and the status lifecycle against an in-memory H2 database. CI runs the same tests on Java 11 and 17. This is not an AI classifier; severities are supplied by the caller and the API does not automatically assess threats.
 
 ## Structure
 
