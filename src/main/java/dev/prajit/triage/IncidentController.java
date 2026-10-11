@@ -37,6 +37,19 @@ public class IncidentController {
         return repository.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Incident not found"));
     }
 
+    @GetMapping("/summary")
+    public Map<String, Object> summary() {
+        Map<String, Long> byStatus = new java.util.LinkedHashMap<>();
+        for (Incident.Status s : Incident.Status.values()) byStatus.put(s.name(), repository.countByStatus(s));
+        Map<String, Long> bySeverity = new java.util.LinkedHashMap<>();
+        for (Incident.Severity s : Incident.Severity.values()) bySeverity.put(s.name(), repository.countBySeverity(s));
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("total", repository.count());
+        result.put("byStatus", byStatus);
+        result.put("bySeverity", bySeverity);
+        return result;
+    }
+
     @GetMapping
     public Page<Incident> list(@RequestParam(required = false) Incident.Status status,
                                @RequestParam(required = false) Incident.Severity severity,
