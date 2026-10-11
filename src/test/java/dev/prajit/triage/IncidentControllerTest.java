@@ -120,4 +120,29 @@ class IncidentControllerTest {
         mvc.perform(get("/api/incidents?page=2147483647&size=1"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.content").isEmpty());
     }
+    @Test void summaryOfEmptyStoreIsZeroFilled() throws Exception {
+        mvc.perform(get("/api/incidents/summary")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.total").value(0))
+            .andExpect(jsonPath("$.byStatus.OPEN").value(0))
+            .andExpect(jsonPath("$.byStatus.INVESTIGATING").value(0))
+            .andExpect(jsonPath("$.byStatus.RESOLVED").value(0))
+            .andExpect(jsonPath("$.bySeverity.LOW").value(0))
+            .andExpect(jsonPath("$.bySeverity.CRITICAL").value(0));
+    }
+    @Test void summaryCountsByStatusAndSeverity() throws Exception {
+        long first = create();
+        create();
+        mvc.perform(post("/api/incidents").contentType("application/json").content(payload("LOW")))
+            .andExpect(status().isCreated());
+        mvc.perform(patch("/api/incidents/{id}/status", first).contentType("application/json").content("{\"status\":\"RESOLVED\"}"))
+            .andExpect(status().isOk());
+        mvc.perform(get("/api/incidents/summary")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.total").value(3))
+            .andExpect(jsonPath("$.byStatus.OPEN").value(2))
+            .andExpect(jsonPath("$.byStatus.INVESTIGATING").value(0))
+            .andExpect(jsonPath("$.byStatus.RESOLVED").value(1))
+            .andExpect(jsonPath("$.bySeverity.HIGH").value(2))
+            .andExpect(jsonPath("$.bySeverity.LOW").value(1))
+            .andExpect(jsonPath("$.bySeverity.MEDIUM").value(0));
+    }
 }
