@@ -7,5 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface IncidentRepository extends JpaRepository<Incident, Long> {
     Page<Incident> findByStatus(Incident.Status status, Pageable pageable);
     Page<Incident> findBySeverity(Incident.Severity severity, Pageable pageable);
+    long countByStatus(Incident.Status status);
+    long countBySeverity(Incident.Severity severity);
     Page<Incident> findByStatusAndSeverity(Incident.Status status, Incident.Severity severity, Pageable pageable);
 }
