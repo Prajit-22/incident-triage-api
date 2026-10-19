@@ -17,6 +17,8 @@ public class Incident {
     public Status status;
     @Column(nullable = false)
     public Instant createdAt;
+    // Set when the incident first reaches RESOLVED; null while it is open work.
+    public Instant resolvedAt;
 
     protected Incident() {}
     public Incident(String title, String description, Severity severity) {
