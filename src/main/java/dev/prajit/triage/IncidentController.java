@@ -47,7 +47,20 @@ public class IncidentController {
         result.put("total", repository.count());
         result.put("byStatus", byStatus);
         result.put("bySeverity", bySeverity);
+        result.put("averageResolutionSeconds", averageResolutionSeconds());
         return result;
+    }
+
+    private Double averageResolutionSeconds() {
+        // Mean created-to-resolved time over resolved incidents, null when none are resolved.
+        double total = 0;
+        long count = 0;
+        for (Incident incident : repository.findAllByStatus(Incident.Status.RESOLVED)) {
+            if (incident.resolvedAt == null) continue; // rows resolved before this field existed
+            total += java.time.Duration.between(incident.createdAt, incident.resolvedAt).toMillis() / 1000.0;
+            count++;
+        }
+        return count == 0 ? null : Math.round(total / count * 10.0) / 10.0;
     }
 
     @GetMapping
@@ -70,6 +83,8 @@ public class IncidentController {
         Incident incident = get(id);
         if (incident.status == Incident.Status.RESOLVED && request.status != Incident.Status.RESOLVED)
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Resolved incidents cannot be reopened");
+        if (request.status == Incident.Status.RESOLVED && incident.resolvedAt == null)
+            incident.resolvedAt = java.time.Instant.now();
         incident.status = request.status;
         return repository.save(incident);
     }
