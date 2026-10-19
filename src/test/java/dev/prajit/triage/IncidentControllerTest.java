@@ -129,6 +129,44 @@ class IncidentControllerTest {
             .andExpect(jsonPath("$.bySeverity.LOW").value(0))
             .andExpect(jsonPath("$.bySeverity.CRITICAL").value(0));
     }
+    @Test void resolvingSetsResolvedAtOnce() throws Exception {
+        long id = create();
+        mvc.perform(get("/api/incidents/{id}", id)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.resolvedAt").value(org.hamcrest.Matchers.nullValue()));
+        String first = mvc.perform(patch("/api/incidents/{id}/status", id).contentType("application/json")
+            .content("{\"status\":\"RESOLVED\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.resolvedAt").isNotEmpty())
+            .andReturn().getResponse().getContentAsString();
+        String resolvedAt = new com.fasterxml.jackson.databind.ObjectMapper().readTree(first).get("resolvedAt").asText();
+        mvc.perform(patch("/api/incidents/{id}/status", id).contentType("application/json")
+            .content("{\"status\":\"RESOLVED\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.resolvedAt").value(resolvedAt));
+        java.time.Instant resolved = repository.findById(id).orElseThrow().resolvedAt;
+        java.time.Instant created = repository.findById(id).orElseThrow().createdAt;
+        org.junit.jupiter.api.Assertions.assertFalse(resolved.isBefore(created));
+    }
+    @Test void summaryAveragesResolutionTime() throws Exception {
+        long first = create();
+        long second = create();
+        for (long id : new long[]{first, second})
+            mvc.perform(patch("/api/incidents/{id}/status", id).contentType("application/json")
+                .content("{\"status\":\"RESOLVED\"}")).andExpect(status().isOk());
+        double expected = 0;
+        for (long id : new long[]{first, second}) {
+            Incident incident = repository.findById(id).orElseThrow();
+            expected += java.time.Duration.between(incident.createdAt, incident.resolvedAt).toMillis() / 1000.0;
+        }
+        expected = Math.round(expected / 2 * 10.0) / 10.0;
+        mvc.perform(get("/api/incidents/summary")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.averageResolutionSeconds").value(expected));
+    }
+    @Test void summaryWithoutResolutionsHasNullAverage() throws Exception {
+        create();
+        mvc.perform(get("/api/incidents/summary")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.averageResolutionSeconds").value(org.hamcrest.Matchers.nullValue()));
+    }
     @Test void summaryCountsByStatusAndSeverity() throws Exception {
         long first = create();
         create();
