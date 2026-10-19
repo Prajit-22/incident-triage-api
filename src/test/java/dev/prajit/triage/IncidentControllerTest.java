@@ -133,12 +133,13 @@ class IncidentControllerTest {
         long id = create();
         mvc.perform(get("/api/incidents/{id}", id)).andExpect(status().isOk())
             .andExpect(jsonPath("$.resolvedAt").value(org.hamcrest.Matchers.nullValue()));
-        String first = mvc.perform(patch("/api/incidents/{id}/status", id).contentType("application/json")
+        mvc.perform(patch("/api/incidents/{id}/status", id).contentType("application/json")
             .content("{\"status\":\"RESOLVED\"}"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.resolvedAt").isNotEmpty())
-            .andReturn().getResponse().getContentAsString();
-        String resolvedAt = new com.fasterxml.jackson.databind.ObjectMapper().readTree(first).get("resolvedAt").asText();
+            .andExpect(jsonPath("$.resolvedAt").isNotEmpty());
+        // Compare against the stored value: H2 rounds timestamps to micros, so the
+        // write response's nanosecond value need not match what later reads return.
+        String resolvedAt = repository.findById(id).orElseThrow().resolvedAt.toString();
         mvc.perform(patch("/api/incidents/{id}/status", id).contentType("application/json")
             .content("{\"status\":\"RESOLVED\"}"))
             .andExpect(status().isOk())
