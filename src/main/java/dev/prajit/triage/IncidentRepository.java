@@ -1,11 +1,13 @@
 package dev.prajit.triage;
 
+import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface IncidentRepository extends JpaRepository<Incident, Long> {
     Page<Incident> findByStatus(Incident.Status status, Pageable pageable);
+    List<Incident> findAllByStatus(Incident.Status status);
     Page<Incident> findBySeverity(Incident.Severity severity, Pageable pageable);
     long countByStatus(Incident.Status status);
     long countBySeverity(Incident.Severity severity);
