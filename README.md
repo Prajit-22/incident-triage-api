@@ -22,6 +22,9 @@ curl -i -X POST http://localhost:8080/api/incidents \
 
 # Read, filter and paginate
 curl 'http://localhost:8080/api/incidents?severity=HIGH&status=OPEN&page=0&size=20'
+
+# Keyword search over titles and descriptions (combines with the filters)
+curl 'http://localhost:8080/api/incidents?q=login&status=OPEN'
 curl http://localhost:8080/api/incidents/1
 
 # Triage overview: counts by status and severity
@@ -32,7 +35,7 @@ curl -i -X PATCH http://localhost:8080/api/incidents/1/status \
   -H 'Content-Type: application/json' -d '{"status":"INVESTIGATING"}'
 ```
 
-Severities: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`. Invalid payloads, enum values, and page sizes return 400. A payload that fails validation gets `{"error": "Invalid incident payload", "fields": {"title": "..."}}`, naming each bad field; missing IDs return 404; reopening a resolved incident returns 409. Pagination is capped at 100 rows per page. The offset (`page * size`) must not exceed 2,147,483,647, the JPA limit; larger offsets return 400 rather than a server error. Results are sorted by newest timestamp and ID. `GET /api/incidents/summary` returns `{"total", "byStatus", "bySeverity", "averageResolutionSeconds"}`; every status and severity appears, with 0 when none match. Resolving an incident stamps `resolvedAt` (a repeat RESOLVED keeps the first timestamp), and the summary's `averageResolutionSeconds` is the mean created-to-resolved time across resolved incidents, or null when none are resolved yet.
+Severities: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`. Invalid payloads, enum values, and page sizes return 400. A payload that fails validation gets `{"error": "Invalid incident payload", "fields": {"title": "..."}}`, naming each bad field; missing IDs return 404; reopening a resolved incident returns 409. Pagination is capped at 100 rows per page. The offset (`page * size`) must not exceed 2,147,483,647, the JPA limit; larger offsets return 400 rather than a server error. The optional `q` parameter is a case-insensitive keyword search over titles and descriptions; it combines with the `status` and `severity` filters and a blank `q` is ignored. Results are sorted by newest timestamp and ID. `GET /api/incidents/summary` returns `{"total", "byStatus", "bySeverity", "averageResolutionSeconds"}`; every status and severity appears, with 0 when none match. Resolving an incident stamps `resolvedAt` (a repeat RESOLVED keeps the first timestamp), and the summary's `averageResolutionSeconds` is the mean created-to-resolved time across resolved incidents, or null when none are resolved yet.
 
 ## Test
 
@@ -40,7 +43,7 @@ Severities: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`. Invalid payloads, enum values, 
 mvn verify
 ```
 
-Eighteen MockMvc integration tests exercise create/read, input validation (including per-field error messages and the title length limit), malformed JSON and bad filter values, missing records and pagination (including oversized offsets and accepted boundary values), combined filters, newest-first ordering, the summary counts and average resolution time (empty and populated), resolution timestamps, and the status lifecycle against an in-memory H2 database. CI runs the same tests on Java 11 and 17. This is not an AI classifier; severities are supplied by the caller and the API does not automatically assess threats.
+Twenty-one MockMvc integration tests exercise create/read, keyword search (title and description matching, combined filters, no-match and blank keywords), input validation (including per-field error messages and the title length limit), malformed JSON and bad filter values, missing records and pagination (including oversized offsets and accepted boundary values), combined filters, newest-first ordering, the summary counts and average resolution time (empty and populated), resolution timestamps, and the status lifecycle against an in-memory H2 database. CI runs the same tests on Java 11 and 17. This is not an AI classifier; severities are supplied by the caller and the API does not automatically assess threats.
 
 ## Structure
 
