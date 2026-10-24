@@ -184,4 +184,41 @@ class IncidentControllerTest {
             .andExpect(jsonPath("$.bySeverity.LOW").value(1))
             .andExpect(jsonPath("$.bySeverity.MEDIUM").value(0));
     }
+    @Test void searchMatchesTitleAndDescriptionCaseInsensitively() throws Exception {
+        long login = create(); // title "Unusual login", description "Multiple failed attempts"
+        mvc.perform(post("/api/incidents").contentType("application/json")
+            .content("{\"title\":\"Disk full\",\"description\":\"No space left on /var\",\"severity\":\"MEDIUM\"}"))
+            .andExpect(status().isCreated());
+        mvc.perform(get("/api/incidents?q=LOGIN")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].id").value((int) login));
+        mvc.perform(get("/api/incidents").param("q", "failed attempts")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].id").value((int) login));
+        mvc.perform(get("/api/incidents?q=space")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].title").value("Disk full"));
+    }
+    @Test void searchCombinesWithStatusAndSeverity() throws Exception {
+        long first = create();
+        long second = create();
+        mvc.perform(patch("/api/incidents/{id}/status", second).contentType("application/json")
+            .content("{\"status\":\"RESOLVED\"}")).andExpect(status().isOk());
+        mvc.perform(get("/api/incidents?q=login&status=RESOLVED")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].id").value((int) second));
+        mvc.perform(get("/api/incidents?q=login&severity=LOW")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(0));
+        mvc.perform(get("/api/incidents?q=login&severity=HIGH&status=OPEN")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].id").value((int) first));
+    }
+    @Test void searchWithoutMatchIsEmptyAndBlankIsNoFilter() throws Exception {
+        create();
+        mvc.perform(get("/api/incidents?q=ransomware")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(0))
+            .andExpect(jsonPath("$.content").isEmpty());
+        mvc.perform(get("/api/incidents?q=")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(1));
+    }
 }
