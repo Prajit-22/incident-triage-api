@@ -66,16 +66,15 @@ public class IncidentController {
     @GetMapping
     public Page<Incident> list(@RequestParam(required = false) Incident.Status status,
                                @RequestParam(required = false) Incident.Severity severity,
+                               @RequestParam(required = false) String q,
                                @RequestParam(defaultValue = "0") int page,
                                @RequestParam(defaultValue = "20") int size) {
         if (page < 0 || size < 1 || size > 100) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page must be >= 0; size must be 1..100");
         if ((long) page * size > Integer.MAX_VALUE)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page * size must be <= 2147483647");
+        if (q != null && q.isBlank()) q = null; // a blank keyword is no keyword
         PageRequest paging = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id"));
-        if (status != null && severity != null) return repository.findByStatusAndSeverity(status, severity, paging);
-        if (status != null) return repository.findByStatus(status, paging);
-        if (severity != null) return repository.findBySeverity(severity, paging);
-        return repository.findAll(paging);
+        return repository.search(status, severity, q, paging);
     }
 
     @PatchMapping("/{id}/status")
