@@ -221,4 +221,39 @@ class IncidentControllerTest {
         mvc.perform(get("/api/incidents?q=")).andExpect(status().isOk())
             .andExpect(jsonPath("$.totalElements").value(1));
     }
+    @Test void updateSeverityRetriagesIncident() throws Exception {
+        long id = create(); // HIGH
+        mvc.perform(patch("/api/incidents/{id}/severity", id).contentType("application/json")
+            .content("{\"severity\":\"CRITICAL\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.severity").value("CRITICAL"));
+        mvc.perform(get("/api/incidents/{id}", id)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.severity").value("CRITICAL"));
+        mvc.perform(get("/api/incidents?severity=CRITICAL"))
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].id").value((int) id));
+        mvc.perform(get("/api/incidents?severity=HIGH"))
+            .andExpect(jsonPath("$.totalElements").value(0));
+    }
+    @Test void updateSeverityLeavesStatusAndTimestampsAlone() throws Exception {
+        long id = create();
+        mvc.perform(patch("/api/incidents/{id}/status", id).contentType("application/json")
+            .content("{\"status\":\"RESOLVED\"}")).andExpect(status().isOk());
+        String resolvedAt = repository.findById(id).orElseThrow().resolvedAt.toString();
+        // Post-incident review re-rating: allowed even after resolution.
+        mvc.perform(patch("/api/incidents/{id}/severity", id).contentType("application/json")
+            .content("{\"severity\":\"LOW\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("RESOLVED"))
+            .andExpect(jsonPath("$.severity").value("LOW"))
+            .andExpect(jsonPath("$.resolvedAt").value(resolvedAt));
+    }
+    @Test void updateSeverityValidatesInput() throws Exception {
+        mvc.perform(patch("/api/incidents/{id}/severity", 999999).contentType("application/json")
+            .content("{\"severity\":\"LOW\"}")).andExpect(status().isNotFound());
+        long id = create();
+        mvc.perform(patch("/api/incidents/{id}/severity", id).contentType("application/json")
+            .content("{\"severity\":\"BOGUS\"}")).andExpect(status().isBadRequest());
+        mvc.perform(patch("/api/incidents/{id}/severity", id).contentType("application/json")
+            .content("{}")).andExpect(status().isBadRequest());
+    }
 }
