@@ -26,6 +26,9 @@ public class IncidentController {
     public static class StatusRequest {
         @NotNull public Incident.Status status;
     }
+    public static class SeverityRequest {
+        @NotNull public Incident.Severity severity;
+    }
 
     @PostMapping @ResponseStatus(HttpStatus.CREATED)
     public Incident create(@Valid @RequestBody CreateRequest request) {
@@ -85,6 +88,15 @@ public class IncidentController {
         if (request.status == Incident.Status.RESOLVED && incident.resolvedAt == null)
             incident.resolvedAt = java.time.Instant.now();
         incident.status = request.status;
+        return repository.save(incident);
+    }
+
+    @PatchMapping("/{id}/severity")
+    public Incident updateSeverity(@PathVariable Long id, @Valid @RequestBody SeverityRequest request) {
+        // Severity is an assessment label, not lifecycle: re-triage is allowed
+        // at any point, including after resolution (status stays untouched).
+        Incident incident = get(id);
+        incident.severity = request.severity;
         return repository.save(incident);
     }
 
