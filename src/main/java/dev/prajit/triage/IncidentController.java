@@ -70,14 +70,24 @@ public class IncidentController {
     public Page<Incident> list(@RequestParam(required = false) Incident.Status status,
                                @RequestParam(required = false) Incident.Severity severity,
                                @RequestParam(required = false) String q,
+                               @RequestParam(required = false, name = "created_after")
+                                   @org.springframework.format.annotation.DateTimeFormat(
+                                       iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
+                                   java.time.Instant createdAfter,
+                               @RequestParam(required = false, name = "created_before")
+                                   @org.springframework.format.annotation.DateTimeFormat(
+                                       iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
+                                   java.time.Instant createdBefore,
                                @RequestParam(defaultValue = "0") int page,
                                @RequestParam(defaultValue = "20") int size) {
         if (page < 0 || size < 1 || size > 100) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page must be >= 0; size must be 1..100");
         if ((long) page * size > Integer.MAX_VALUE)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page * size must be <= 2147483647");
         if (q != null && q.isBlank()) q = null; // a blank keyword is no keyword
+        if (createdAfter != null && createdBefore != null && createdAfter.isAfter(createdBefore))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "created_after must not be later than created_before");
         PageRequest paging = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id"));
-        return repository.search(status, severity, q, paging);
+        return repository.search(status, severity, q, createdAfter, createdBefore, paging);
     }
 
     @PatchMapping("/{id}/status")
