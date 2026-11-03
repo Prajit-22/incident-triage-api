@@ -26,6 +26,12 @@ class IncidentControllerTest {
             .andReturn().getResponse().getContentAsString();
         return new com.fasterxml.jackson.databind.ObjectMapper().readTree(body).get("id").asLong();
     }
+    private java.time.Instant createdAt(long id) throws Exception {
+        String body = mvc.perform(get("/api/incidents/{id}", id)).andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        return java.time.Instant.parse(
+            new com.fasterxml.jackson.databind.ObjectMapper().readTree(body).get("createdAt").asText());
+    }
     @Test void createAndFetch() throws Exception {
         long id = create();
         mvc.perform(get("/api/incidents/{id}", id)).andExpect(status().isOk())
@@ -220,6 +226,55 @@ class IncidentControllerTest {
             .andExpect(jsonPath("$.content").isEmpty());
         mvc.perform(get("/api/incidents?q=")).andExpect(status().isOk())
             .andExpect(jsonPath("$.totalElements").value(1));
+    }
+    @Test void listFiltersByCreatedWindow() throws Exception {
+        long older = create();
+        long newer = create();
+        java.time.Instant newerAt = createdAt(newer);
+        java.time.Instant olderAt = createdAt(older);
+        mvc.perform(get("/api/incidents").param("created_after", newerAt.toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].id").value((int) newer));
+        mvc.perform(get("/api/incidents").param("created_before", olderAt.toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].id").value((int) older));
+        mvc.perform(get("/api/incidents")
+                .param("created_after", olderAt.toString())
+                .param("created_before", newerAt.toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(2));
+    }
+    @Test void createdWindowBoundariesAreInclusive() throws Exception {
+        long id = create();
+        java.time.Instant at = createdAt(id);
+        mvc.perform(get("/api/incidents").param("created_after", at.toString()))
+            .andExpect(jsonPath("$.totalElements").value(1));
+        mvc.perform(get("/api/incidents").param("created_after", at.plusSeconds(1).toString()))
+            .andExpect(jsonPath("$.totalElements").value(0));
+        mvc.perform(get("/api/incidents").param("created_before", at.toString()))
+            .andExpect(jsonPath("$.totalElements").value(1));
+        mvc.perform(get("/api/incidents").param("created_before", at.minusSeconds(1).toString()))
+            .andExpect(jsonPath("$.totalElements").value(0));
+    }
+    @Test void createdWindowCombinesWithKeywordSearch() throws Exception {
+        long id = create(); // title "Unusual login"
+        java.time.Instant at = createdAt(id);
+        mvc.perform(get("/api/incidents").param("q", "login").param("created_after", at.toString()))
+            .andExpect(jsonPath("$.totalElements").value(1));
+        mvc.perform(get("/api/incidents").param("q", "login")
+                .param("created_after", at.plusSeconds(1).toString()))
+            .andExpect(jsonPath("$.totalElements").value(0));
+    }
+    @Test void createdWindowRejectsBadValues() throws Exception {
+        create();
+        mvc.perform(get("/api/incidents").param("created_after", "last-tuesday"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/incidents")
+                .param("created_after", "2026-11-03T12:00:00Z")
+                .param("created_before", "2026-11-03T11:00:00Z"))
+            .andExpect(status().isBadRequest());
     }
     @Test void updateSeverityRetriagesIncident() throws Exception {
         long id = create(); // HIGH
