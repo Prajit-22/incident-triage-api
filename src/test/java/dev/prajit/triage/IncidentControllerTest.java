@@ -16,7 +16,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class IncidentControllerTest {
     @Autowired MockMvc mvc;
     @Autowired IncidentRepository repository;
-    @BeforeEach void clear() { repository.deleteAll(); }
+    @Autowired IncidentEventRepository eventRepository;
+    @BeforeEach void clear() { eventRepository.deleteAll(); repository.deleteAll(); }
     private String payload(String severity) {
         return "{\"title\":\"Unusual login\",\"description\":\"Multiple failed attempts\",\"severity\":\"" + severity + "\"}";
     }
@@ -310,5 +311,62 @@ class IncidentControllerTest {
             .content("{\"severity\":\"BOGUS\"}")).andExpect(status().isBadRequest());
         mvc.perform(patch("/api/incidents/{id}/severity", id).contentType("application/json")
             .content("{}")).andExpect(status().isBadRequest());
+    }
+
+    @Test void createRecordsACreatedEvent() throws Exception {
+        long id = create();
+        mvc.perform(get("/api/incidents/{id}/events", id)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].kind").value("CREATED"))
+            .andExpect(jsonPath("$[0].toValue").value("OPEN"))
+            .andExpect(jsonPath("$[0].fromValue").value(org.hamcrest.Matchers.nullValue()))
+            .andExpect(jsonPath("$[0].happenedAt").exists());
+    }
+    @Test void statusChangesAreRecordedInOrder() throws Exception {
+        long id = create();
+        mvc.perform(patch("/api/incidents/{id}/status", id).contentType("application/json")
+            .content("{\"status\":\"INVESTIGATING\"}")).andExpect(status().isOk());
+        mvc.perform(patch("/api/incidents/{id}/status", id).contentType("application/json")
+            .content("{\"status\":\"RESOLVED\"}")).andExpect(status().isOk());
+        mvc.perform(get("/api/incidents/{id}/events", id)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(3))
+            .andExpect(jsonPath("$[1].kind").value("STATUS_CHANGED"))
+            .andExpect(jsonPath("$[1].fromValue").value("OPEN"))
+            .andExpect(jsonPath("$[1].toValue").value("INVESTIGATING"))
+            .andExpect(jsonPath("$[2].kind").value("STATUS_CHANGED"))
+            .andExpect(jsonPath("$[2].fromValue").value("INVESTIGATING"))
+            .andExpect(jsonPath("$[2].toValue").value("RESOLVED"));
+    }
+    @Test void repeatStatusPatchRecordsNoExtraEvent() throws Exception {
+        long id = create();
+        for (int i = 0; i < 2; i++)
+            mvc.perform(patch("/api/incidents/{id}/status", id).contentType("application/json")
+                .content("{\"status\":\"INVESTIGATING\"}")).andExpect(status().isOk());
+        mvc.perform(get("/api/incidents/{id}/events", id)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(2))
+            .andExpect(jsonPath("$[1].kind").value("STATUS_CHANGED"));
+    }
+    @Test void severityChangeIsRecordedWithoutTouchingStatus() throws Exception {
+        long id = create();
+        mvc.perform(patch("/api/incidents/{id}/severity", id).contentType("application/json")
+            .content("{\"severity\":\"CRITICAL\"}")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("OPEN"));
+        mvc.perform(get("/api/incidents/{id}/events", id)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(2))
+            .andExpect(jsonPath("$[1].kind").value("SEVERITY_CHANGED"))
+            .andExpect(jsonPath("$[1].fromValue").value("HIGH"))
+            .andExpect(jsonPath("$[1].toValue").value("CRITICAL"));
+    }
+    @Test void rejectedReopenRecordsNoEvent() throws Exception {
+        long id = create();
+        mvc.perform(patch("/api/incidents/{id}/status", id).contentType("application/json")
+            .content("{\"status\":\"RESOLVED\"}")).andExpect(status().isOk());
+        mvc.perform(patch("/api/incidents/{id}/status", id).contentType("application/json")
+            .content("{\"status\":\"OPEN\"}")).andExpect(status().isConflict());
+        mvc.perform(get("/api/incidents/{id}/events", id)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(2));
+    }
+    @Test void eventsForMissingIncidentAre404() throws Exception {
+        mvc.perform(get("/api/incidents/999999/events")).andExpect(status().isNotFound());
     }
 }
