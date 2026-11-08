@@ -16,7 +16,11 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/api/incidents")
 public class IncidentController {
     private final IncidentRepository repository;
-    public IncidentController(IncidentRepository repository) { this.repository = repository; }
+    private final IncidentEventRepository eventRepository;
+    public IncidentController(IncidentRepository repository, IncidentEventRepository eventRepository) {
+        this.repository = repository;
+        this.eventRepository = eventRepository;
+    }
 
     public static class CreateRequest {
         @NotBlank @Size(max = 120) public String title;
@@ -32,7 +36,15 @@ public class IncidentController {
 
     @PostMapping @ResponseStatus(HttpStatus.CREATED)
     public Incident create(@Valid @RequestBody CreateRequest request) {
-        return repository.save(new Incident(request.title, request.description, request.severity));
+        Incident saved = repository.save(new Incident(request.title, request.description, request.severity));
+        eventRepository.save(new IncidentEvent(saved.id, IncidentEvent.Kind.CREATED, null, saved.status.name()));
+        return saved;
+    }
+
+    @GetMapping("/{id}/events")
+    public java.util.List<IncidentEvent> events(@PathVariable Long id) {
+        get(id); // 404 when the incident does not exist
+        return eventRepository.findByIncidentIdOrderByHappenedAtAscIdAsc(id);
     }
 
     @GetMapping("/{id}")
@@ -95,6 +107,11 @@ public class IncidentController {
         Incident incident = get(id);
         if (incident.status == Incident.Status.RESOLVED && request.status != Incident.Status.RESOLVED)
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Resolved incidents cannot be reopened");
+        if (incident.status != request.status) {
+            // Only real transitions are timeline events; a repeat PATCH is a no-op.
+            eventRepository.save(new IncidentEvent(id, IncidentEvent.Kind.STATUS_CHANGED,
+                incident.status.name(), request.status.name()));
+        }
         if (request.status == Incident.Status.RESOLVED && incident.resolvedAt == null)
             incident.resolvedAt = java.time.Instant.now();
         incident.status = request.status;
@@ -106,6 +123,10 @@ public class IncidentController {
         // Severity is an assessment label, not lifecycle: re-triage is allowed
         // at any point, including after resolution (status stays untouched).
         Incident incident = get(id);
+        if (incident.severity != request.severity) {
+            eventRepository.save(new IncidentEvent(id, IncidentEvent.Kind.SEVERITY_CHANGED,
+                incident.severity.name(), request.severity.name()));
+        }
         incident.severity = request.severity;
         return repository.save(incident);
     }
