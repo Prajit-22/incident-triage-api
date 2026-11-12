@@ -39,20 +39,4 @@ public interface IncidentRepository extends JpaRepository<Incident, Long> {
                           @Param("now") java.time.Instant now,
                           @Param("resolvedStatus") Incident.Status resolvedStatus,
                           Pageable pageable);
-
-    // Pre-overdue signature, kept briefly so the controller compiles while
-    // the new query rolls out; removed once the controller switches over.
-    @Query("SELECT i FROM Incident i WHERE "
-        + "(:status IS NULL OR i.status = :status) AND "
-        + "(:severity IS NULL OR i.severity = :severity) AND "
-        + "(:query IS NULL OR LOWER(i.title) LIKE LOWER(CONCAT(CONCAT('%', :query), '%')) "
-        + "OR LOWER(i.description) LIKE LOWER(CONCAT(CONCAT('%', :query), '%'))) AND "
-        + "(:createdAfter IS NULL OR i.createdAt >= :createdAfter) AND "
-        + "(:createdBefore IS NULL OR i.createdAt <= :createdBefore)")
-    Page<Incident> search(@Param("status") Incident.Status status,
-                          @Param("severity") Incident.Severity severity,
-                          @Param("query") String query,
-                          @Param("createdAfter") java.time.Instant createdAfter,
-                          @Param("createdBefore") java.time.Instant createdBefore,
-                          Pageable pageable);
 }
