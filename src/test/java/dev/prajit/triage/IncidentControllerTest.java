@@ -369,4 +369,70 @@ class IncidentControllerTest {
     @Test void eventsForMissingIncidentAre404() throws Exception {
         mvc.perform(get("/api/incidents/999999/events")).andExpect(status().isNotFound());
     }
+
+    @Test void createWithDueDateRoundTrips() throws Exception {
+        String body = mvc.perform(post("/api/incidents").contentType("application/json")
+            .content("{\"title\":\"Cert expiring\",\"description\":\"TLS cert expires\",\"severity\":\"MEDIUM\",\"dueAt\":\"2099-01-01T00:00:00Z\"}"))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.dueAt").value("2099-01-01T00:00:00Z"))
+            .andReturn().getResponse().getContentAsString();
+        long id = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body).get("id").asLong();
+        mvc.perform(get("/api/incidents/{id}", id)).andExpect(jsonPath("$.dueAt").value("2099-01-01T00:00:00Z"));
+        long plain = create();
+        mvc.perform(get("/api/incidents/{id}", plain)).andExpect(jsonPath("$.dueAt").doesNotExist());
+    }
+    @Test void updateDueSetsAndClearsTheDeadline() throws Exception {
+        long id = create();
+        mvc.perform(patch("/api/incidents/{id}/due", id).contentType("application/json")
+            .content("{\"dueAt\":\"2099-06-01T12:00:00Z\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.dueAt").value("2099-06-01T12:00:00Z"));
+        mvc.perform(patch("/api/incidents/{id}/due", id).contentType("application/json")
+            .content("{\"dueAt\":null}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.dueAt").doesNotExist());
+    }
+    @Test void updateDueOnMissingIncidentIs404() throws Exception {
+        mvc.perform(patch("/api/incidents/999999/due").contentType("application/json")
+            .content("{\"dueAt\":\"2099-06-01T12:00:00Z\"}"))
+            .andExpect(status().isNotFound());
+    }
+    @Test void createRejectsAnUnparseableDueDate() throws Exception {
+        mvc.perform(post("/api/incidents").contentType("application/json")
+            .content("{\"title\":\"t\",\"description\":\"d\",\"severity\":\"LOW\",\"dueAt\":\"next-friday\"}"))
+            .andExpect(status().isBadRequest());
+    }
+    @Test void overdueFilterFlagsOnlyOpenPastDueWork() throws Exception {
+        java.util.function.Consumer<String> seed = due -> {
+            try {
+                mvc.perform(post("/api/incidents").contentType("application/json")
+                    .content("{\"title\":\"due " + due + "\",\"description\":\"d\",\"severity\":\"LOW\"" +
+                        (due == null ? "" : ",\"dueAt\":\"" + due + "\"") + "}"))
+                    .andExpect(status().isCreated());
+            } catch (Exception e) { throw new RuntimeException(e); }
+        };
+        seed.accept("2020-01-01T00:00:00Z"); // overdue, open
+        seed.accept("2099-01-01T00:00:00Z"); // due later, open
+        seed.accept(null);                   // no deadline
+        // A resolved incident past its due date is not overdue.
+        String resolvedBody = mvc.perform(post("/api/incidents").contentType("application/json")
+            .content("{\"title\":\"old resolved\",\"description\":\"d\",\"severity\":\"LOW\",\"dueAt\":\"2020-01-01T00:00:00Z\"}"))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        long resolvedId = new com.fasterxml.jackson.databind.ObjectMapper().readTree(resolvedBody).get("id").asLong();
+        mvc.perform(patch("/api/incidents/{id}/status", resolvedId).contentType("application/json")
+            .content("{\"status\":\"RESOLVED\"}")).andExpect(status().isOk());
+        mvc.perform(get("/api/incidents?overdue=true"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].title").value("due 2020-01-01T00:00:00Z"));
+        mvc.perform(get("/api/incidents?overdue=false"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(3));
+    }
+    @Test void summaryCountsOverdueOpenIncidents() throws Exception {
+        mvc.perform(get("/api/incidents/summary"))
+            .andExpect(jsonPath("$.overdueOpen").value(0));
+        mvc.perform(post("/api/incidents").contentType("application/json")
+            .content("{\"title\":\"late\",\"description\":\"d\",\"severity\":\"HIGH\",\"dueAt\":\"2020-01-01T00:00:00Z\"}"))
+            .andExpect(status().isCreated());
+        mvc.perform(get("/api/incidents/summary"))
+            .andExpect(jsonPath("$.overdueOpen").value(1));
+    }
 }
