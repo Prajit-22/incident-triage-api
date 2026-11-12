@@ -19,6 +19,8 @@ public class Incident {
     public Instant createdAt;
     // Set when the incident first reaches RESOLVED; null while it is open work.
     public Instant resolvedAt;
+    // Optional resolution deadline; an open incident past it is overdue.
+    public Instant dueAt;
 
     protected Incident() {}
     public Incident(String title, String description, Severity severity) {
