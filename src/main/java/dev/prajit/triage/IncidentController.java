@@ -26,6 +26,12 @@ public class IncidentController {
         @NotBlank @Size(max = 120) public String title;
         @NotBlank @Size(max = 2000) public String description;
         @NotNull public Incident.Severity severity;
+        // Optional resolution deadline (ISO-8601); null means no deadline.
+        public java.time.Instant dueAt;
+    }
+    public static class DueRequest {
+        // Null clears the deadline.
+        public java.time.Instant dueAt;
     }
     public static class StatusRequest {
         @NotNull public Incident.Status status;
@@ -36,7 +42,9 @@ public class IncidentController {
 
     @PostMapping @ResponseStatus(HttpStatus.CREATED)
     public Incident create(@Valid @RequestBody CreateRequest request) {
-        Incident saved = repository.save(new Incident(request.title, request.description, request.severity));
+        Incident incident = new Incident(request.title, request.description, request.severity);
+        incident.dueAt = request.dueAt;
+        Incident saved = repository.save(incident);
         eventRepository.save(new IncidentEvent(saved.id, IncidentEvent.Kind.CREATED, null, saved.status.name()));
         return saved;
     }
@@ -63,6 +71,8 @@ public class IncidentController {
         result.put("byStatus", byStatus);
         result.put("bySeverity", bySeverity);
         result.put("averageResolutionSeconds", averageResolutionSeconds());
+        result.put("overdueOpen", repository.countByDueAtBeforeAndStatusNot(
+            java.time.Instant.now(), Incident.Status.RESOLVED));
         return result;
     }
 
@@ -90,6 +100,7 @@ public class IncidentController {
                                    @org.springframework.format.annotation.DateTimeFormat(
                                        iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
                                    java.time.Instant createdBefore,
+                               @RequestParam(required = false) Boolean overdue,
                                @RequestParam(defaultValue = "0") int page,
                                @RequestParam(defaultValue = "20") int size) {
         if (page < 0 || size < 1 || size > 100) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page must be >= 0; size must be 1..100");
@@ -99,7 +110,17 @@ public class IncidentController {
         if (createdAfter != null && createdBefore != null && createdAfter.isAfter(createdBefore))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "created_after must not be later than created_before");
         PageRequest paging = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id"));
-        return repository.search(status, severity, q, createdAfter, createdBefore, paging);
+        return repository.search(status, severity, q, createdAfter, createdBefore,
+            overdue, java.time.Instant.now(), Incident.Status.RESOLVED, paging);
+    }
+
+    @PatchMapping("/{id}/due")
+    public Incident updateDue(@PathVariable Long id, @RequestBody DueRequest request) {
+        // Set or clear (null) the resolution deadline. Overdue checks only
+        // flag open work; a resolved incident keeps its due date as history.
+        Incident incident = get(id);
+        incident.dueAt = request.dueAt;
+        return repository.save(incident);
     }
 
     @PatchMapping("/{id}/status")
