@@ -13,7 +13,7 @@ public class IncidentEvent {
     public Kind kind;
     // Null on CREATED (there is no previous value); otherwise the value being replaced.
     public String fromValue;
-    @Column(nullable = false)
+    // Null when a deadline is cleared (DUE_CHANGED with no new value).
     public String toValue;
     @Column(nullable = false)
     public Instant happenedAt;
@@ -26,5 +26,5 @@ public class IncidentEvent {
         this.toValue = toValue;
         this.happenedAt = Instant.now();
     }
-    public enum Kind { CREATED, STATUS_CHANGED, SEVERITY_CHANGED }
+    public enum Kind { CREATED, STATUS_CHANGED, SEVERITY_CHANGED, DUE_CHANGED }
 }
