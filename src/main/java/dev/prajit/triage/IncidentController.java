@@ -119,6 +119,13 @@ public class IncidentController {
         // Set or clear (null) the resolution deadline. Overdue checks only
         // flag open work; a resolved incident keeps its due date as history.
         Incident incident = get(id);
+        if (!java.util.Objects.equals(incident.dueAt, request.dueAt)) {
+            // Only real deadline moves are timeline events; a repeat PATCH is a
+            // no-op. A null toValue marks a cleared deadline.
+            eventRepository.save(new IncidentEvent(id, IncidentEvent.Kind.DUE_CHANGED,
+                incident.dueAt == null ? null : incident.dueAt.toString(),
+                request.dueAt == null ? null : request.dueAt.toString()));
+        }
         incident.dueAt = request.dueAt;
         return repository.save(incident);
     }
