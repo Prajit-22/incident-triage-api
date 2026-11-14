@@ -369,6 +369,59 @@ class IncidentControllerTest {
     @Test void eventsForMissingIncidentAre404() throws Exception {
         mvc.perform(get("/api/incidents/999999/events")).andExpect(status().isNotFound());
     }
+    @Test void dueSetIsRecordedAsTimelineEvent() throws Exception {
+        long id = create();
+        mvc.perform(patch("/api/incidents/{id}/due", id).contentType("application/json")
+            .content("{\"dueAt\":\"2099-06-01T12:00:00Z\"}")).andExpect(status().isOk());
+        mvc.perform(get("/api/incidents/{id}/events", id)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(2))
+            .andExpect(jsonPath("$[1].kind").value("DUE_CHANGED"))
+            .andExpect(jsonPath("$[1].fromValue").value(org.hamcrest.Matchers.nullValue()))
+            .andExpect(jsonPath("$[1].toValue").value("2099-06-01T12:00:00Z"))
+            .andExpect(jsonPath("$[1].happenedAt").exists());
+    }
+    @Test void dueMoveAndClearAreRecordedInOrder() throws Exception {
+        long id = create();
+        mvc.perform(patch("/api/incidents/{id}/due", id).contentType("application/json")
+            .content("{\"dueAt\":\"2099-06-01T12:00:00Z\"}")).andExpect(status().isOk());
+        mvc.perform(patch("/api/incidents/{id}/due", id).contentType("application/json")
+            .content("{\"dueAt\":\"2100-01-01T00:00:00Z\"}")).andExpect(status().isOk());
+        mvc.perform(patch("/api/incidents/{id}/due", id).contentType("application/json")
+            .content("{\"dueAt\":null}")).andExpect(status().isOk());
+        mvc.perform(get("/api/incidents/{id}/events", id)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(4))
+            .andExpect(jsonPath("$[2].kind").value("DUE_CHANGED"))
+            .andExpect(jsonPath("$[2].fromValue").value("2099-06-01T12:00:00Z"))
+            .andExpect(jsonPath("$[2].toValue").value("2100-01-01T00:00:00Z"))
+            .andExpect(jsonPath("$[3].kind").value("DUE_CHANGED"))
+            .andExpect(jsonPath("$[3].fromValue").value("2100-01-01T00:00:00Z"))
+            .andExpect(jsonPath("$[3].toValue").value(org.hamcrest.Matchers.nullValue()));
+    }
+    @Test void repeatDuePatchRecordsNoExtraEvent() throws Exception {
+        long id = create();
+        for (int i = 0; i < 2; i++)
+            mvc.perform(patch("/api/incidents/{id}/due", id).contentType("application/json")
+                .content("{\"dueAt\":\"2099-06-01T12:00:00Z\"}")).andExpect(status().isOk());
+        mvc.perform(get("/api/incidents/{id}/events", id)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(2))
+            .andExpect(jsonPath("$[1].kind").value("DUE_CHANGED"));
+    }
+    @Test void clearingAnUnsetDueRecordsNoEvent() throws Exception {
+        long id = create();
+        mvc.perform(patch("/api/incidents/{id}/due", id).contentType("application/json")
+            .content("{\"dueAt\":null}")).andExpect(status().isOk());
+        mvc.perform(get("/api/incidents/{id}/events", id)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(1));
+    }
+    @Test void createWithDueAtRecordsOnlyTheCreatedEvent() throws Exception {
+        String body = mvc.perform(post("/api/incidents").contentType("application/json")
+            .content("{\"title\":\"Cert expiring\",\"description\":\"TLS cert expires\",\"severity\":\"MEDIUM\",\"dueAt\":\"2099-01-01T00:00:00Z\"}"))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        long id = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body).get("id").asLong();
+        mvc.perform(get("/api/incidents/{id}/events", id)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].kind").value("CREATED"));
+    }
 
     @Test void createWithDueDateRoundTrips() throws Exception {
         String body = mvc.perform(post("/api/incidents").contentType("application/json")
