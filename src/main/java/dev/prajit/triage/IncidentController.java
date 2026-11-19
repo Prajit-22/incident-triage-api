@@ -100,6 +100,14 @@ public class IncidentController {
                                    @org.springframework.format.annotation.DateTimeFormat(
                                        iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
                                    java.time.Instant createdBefore,
+                               @RequestParam(required = false, name = "due_after")
+                                   @org.springframework.format.annotation.DateTimeFormat(
+                                       iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
+                                   java.time.Instant dueAfter,
+                               @RequestParam(required = false, name = "due_before")
+                                   @org.springframework.format.annotation.DateTimeFormat(
+                                       iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
+                                   java.time.Instant dueBefore,
                                @RequestParam(required = false) Boolean overdue,
                                @RequestParam(defaultValue = "0") int page,
                                @RequestParam(defaultValue = "20") int size) {
@@ -109,9 +117,11 @@ public class IncidentController {
         if (q != null && q.isBlank()) q = null; // a blank keyword is no keyword
         if (createdAfter != null && createdBefore != null && createdAfter.isAfter(createdBefore))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "created_after must not be later than created_before");
+        if (dueAfter != null && dueBefore != null && dueAfter.isAfter(dueBefore))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "due_after must not be later than due_before");
         PageRequest paging = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id"));
         return repository.search(status, severity, q, createdAfter, createdBefore,
-            overdue, java.time.Instant.now(), Incident.Status.RESOLVED, paging);
+            dueAfter, dueBefore, overdue, java.time.Instant.now(), Incident.Status.RESOLVED, paging);
     }
 
     @PatchMapping("/{id}/due")
