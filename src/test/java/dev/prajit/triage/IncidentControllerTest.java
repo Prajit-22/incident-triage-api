@@ -488,4 +488,65 @@ class IncidentControllerTest {
         mvc.perform(get("/api/incidents/summary"))
             .andExpect(jsonPath("$.overdueOpen").value(1));
     }
+
+    private long createWithDue(String severity, String dueAt) throws Exception {
+        String body = mvc.perform(post("/api/incidents").contentType("application/json")
+                .content("{\"title\":\"Deadline item\",\"description\":\"has a deadline\",\"severity\":\"" + severity
+                    + "\",\"dueAt\":\"" + dueAt + "\"}"))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        return new com.fasterxml.jackson.databind.ObjectMapper().readTree(body).get("id").asLong();
+    }
+    @Test void dueWindowFiltersByDeadline() throws Exception {
+        java.time.Instant base = java.time.Instant.now().plusSeconds(86400);
+        long inWindow = createWithDue("HIGH", base.plusSeconds(2L * 86400).toString());
+        createWithDue("HIGH", base.plusSeconds(10L * 86400).toString());   // after the window
+        create();                                                          // no deadline
+        mvc.perform(get("/api/incidents")
+                .param("due_after", base.toString())
+                .param("due_before", base.plusSeconds(5L * 86400).toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].id").value((int) inWindow));
+    }
+    @Test void dueWindowBoundsAreInclusive() throws Exception {
+        java.time.Instant due = java.time.Instant.now().plusSeconds(3L * 86400);
+        long id = createWithDue("MEDIUM", due.toString());
+        mvc.perform(get("/api/incidents").param("due_after", due.toString()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
+        mvc.perform(get("/api/incidents").param("due_before", due.toString()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
+        mvc.perform(get("/api/incidents").param("due_after", due.plusSeconds(1).toString()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
+        mvc.perform(get("/api/incidents").param("due_before", due.minusSeconds(1).toString()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
+    }
+    @Test void dueWindowOpenEndedAfter() throws Exception {
+        java.time.Instant base = java.time.Instant.now().plusSeconds(86400);
+        createWithDue("LOW", base.plusSeconds(86400).toString());
+        long later = createWithDue("LOW", base.plusSeconds(9L * 86400).toString());
+        mvc.perform(get("/api/incidents").param("due_after", base.plusSeconds(5L * 86400).toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].id").value((int) later));
+    }
+    @Test void rejectsInvertedDueWindow() throws Exception {
+        java.time.Instant base = java.time.Instant.now().plusSeconds(86400);
+        mvc.perform(get("/api/incidents")
+                .param("due_after", base.plusSeconds(86400).toString())
+                .param("due_before", base.toString()))
+            .andExpect(status().isBadRequest());
+    }
+    @Test void dueWindowCombinesWithOtherFilters() throws Exception {
+        java.time.Instant base = java.time.Instant.now().plusSeconds(86400);
+        long match = createWithDue("HIGH", base.plusSeconds(86400).toString());
+        createWithDue("LOW", base.plusSeconds(86400).toString());  // same window, other severity
+        mvc.perform(get("/api/incidents")
+                .param("severity", "HIGH")
+                .param("due_after", base.toString())
+                .param("due_before", base.plusSeconds(2L * 86400).toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].id").value((int) match));
+    }
 }
