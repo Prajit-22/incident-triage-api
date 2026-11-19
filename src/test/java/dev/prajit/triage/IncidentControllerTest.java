@@ -512,13 +512,20 @@ class IncidentControllerTest {
     @Test void dueWindowBoundsAreInclusive() throws Exception {
         java.time.Instant due = java.time.Instant.now().plusSeconds(3L * 86400);
         long id = createWithDue("MEDIUM", due.toString());
-        mvc.perform(get("/api/incidents").param("due_after", due.toString()))
+        // Compare against the stored value, not the locally generated one: the
+        // database can round the timestamp, and on newer JDKs Instant.now()
+        // is precise enough for the round-trip to differ.
+        String body = mvc.perform(get("/api/incidents/{id}", id)).andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        java.time.Instant stored = java.time.Instant.parse(
+            new com.fasterxml.jackson.databind.ObjectMapper().readTree(body).get("dueAt").asText());
+        mvc.perform(get("/api/incidents").param("due_after", stored.toString()))
             .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
-        mvc.perform(get("/api/incidents").param("due_before", due.toString()))
+        mvc.perform(get("/api/incidents").param("due_before", stored.toString()))
             .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
-        mvc.perform(get("/api/incidents").param("due_after", due.plusSeconds(1).toString()))
+        mvc.perform(get("/api/incidents").param("due_after", stored.plusSeconds(1).toString()))
             .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
-        mvc.perform(get("/api/incidents").param("due_before", due.minusSeconds(1).toString()))
+        mvc.perform(get("/api/incidents").param("due_before", stored.minusSeconds(1).toString()))
             .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
     }
     @Test void dueWindowOpenEndedAfter() throws Exception {
