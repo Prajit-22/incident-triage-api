@@ -109,6 +109,7 @@ public class IncidentController {
                                        iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
                                    java.time.Instant dueBefore,
                                @RequestParam(required = false) Boolean overdue,
+                               @RequestParam(required = false, name = "due_within_hours") Integer dueWithinHours,
                                @RequestParam(defaultValue = "0") int page,
                                @RequestParam(defaultValue = "20") int size) {
         if (page < 0 || size < 1 || size > 100) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page must be >= 0; size must be 1..100");
@@ -119,9 +120,20 @@ public class IncidentController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "created_after must not be later than created_before");
         if (dueAfter != null && dueBefore != null && dueAfter.isAfter(dueBefore))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "due_after must not be later than due_before");
+        if (dueWithinHours != null && (dueWithinHours < 1 || dueWithinHours > 720))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "due_within_hours must be between 1 and 720");
+        if (dueWithinHours != null && (dueAfter != null || dueBefore != null))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "due_within_hours cannot be combined with due_after or due_before");
+        // due_within_hours=N is the triage shorthand for "open work whose
+        // deadline lands in the next N hours": [now, now + N hours].
+        java.time.Instant now = java.time.Instant.now();
+        boolean dueSoon = dueWithinHours != null;
+        java.time.Instant dueSoonBefore =
+            dueSoon ? now.plus(dueWithinHours, java.time.temporal.ChronoUnit.HOURS) : now;
         PageRequest paging = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id"));
         return repository.search(status, severity, q, createdAfter, createdBefore,
-            dueAfter, dueBefore, overdue, java.time.Instant.now(), Incident.Status.RESOLVED, paging);
+            dueAfter, dueBefore, overdue, dueSoon, dueSoonBefore, now, Incident.Status.RESOLVED, paging);
     }
 
     @PatchMapping("/{id}/due")
