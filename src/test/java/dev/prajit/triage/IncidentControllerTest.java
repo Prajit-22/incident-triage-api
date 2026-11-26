@@ -544,6 +544,50 @@ class IncidentControllerTest {
                 .param("due_before", base.toString()))
             .andExpect(status().isBadRequest());
     }
+    @Test void dueSoonKeepsOnlyOpenWorkDueInsideTheWindow() throws Exception {
+        long soon = createWithDue("HIGH", java.time.Instant.now().plusSeconds(12L * 3600).toString());
+        createWithDue("HIGH", java.time.Instant.now().plusSeconds(10L * 86400).toString()); // too far out
+        createWithDue("HIGH", "2020-01-01T00:00:00Z");                                        // already overdue
+        create();                                                                              // no deadline
+        // A resolved incident due inside the window is not upcoming work.
+        String resolved = mvc.perform(post("/api/incidents").contentType("application/json")
+                .content("{\"title\":\"resolved soon\",\"description\":\"d\",\"severity\":\"LOW\""
+                    + ",\"dueAt\":\"" + java.time.Instant.now().plusSeconds(6L * 3600) + "\"}"))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        long resolvedId = new com.fasterxml.jackson.databind.ObjectMapper().readTree(resolved).get("id").asLong();
+        mvc.perform(patch("/api/incidents/{id}/status", resolvedId).contentType("application/json")
+                .content("{\"status\":\"RESOLVED\"}"))
+            .andExpect(status().isOk());
+        mvc.perform(get("/api/incidents").param("due_within_hours", "24"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.content[0].id").value((int) soon));
+    }
+    @Test void dueSoonWindowEdges() throws Exception {
+        // Due 12 hours + 30 seconds out: a 12-hour window misses it, a 13-hour
+        // one catches it. Margins are wide enough for clock rounding on any JDK.
+        createWithDue("MEDIUM", java.time.Instant.now().plusSeconds(12L * 3600 + 30).toString());
+        mvc.perform(get("/api/incidents").param("due_within_hours", "12"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
+        mvc.perform(get("/api/incidents").param("due_within_hours", "13"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
+    }
+    @Test void dueSoonRejectsBadHours() throws Exception {
+        for (String bad : new String[]{"0", "-4", "721"})
+            mvc.perform(get("/api/incidents").param("due_within_hours", bad))
+                .andExpect(status().isBadRequest());
+    }
+    @Test void dueSoonCannotCombineWithDueWindow() throws Exception {
+        java.time.Instant base = java.time.Instant.now().plusSeconds(86400);
+        mvc.perform(get("/api/incidents")
+                .param("due_within_hours", "24")
+                .param("due_before", base.toString()))
+            .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/incidents")
+                .param("due_within_hours", "24")
+                .param("due_after", base.toString()))
+            .andExpect(status().isBadRequest());
+    }
     @Test void dueWindowCombinesWithOtherFilters() throws Exception {
         java.time.Instant base = java.time.Instant.now().plusSeconds(86400);
         long match = createWithDue("HIGH", base.plusSeconds(86400).toString());
