@@ -46,4 +46,34 @@ public interface IncidentRepository extends JpaRepository<Incident, Long> {
                           @Param("now") java.time.Instant now,
                           @Param("resolvedStatus") Incident.Status resolvedStatus,
                           Pageable pageable);
+
+    // Due-soon variant: dueSoon=true keeps only open incidents whose dueAt
+    // falls in [now, dueSoonBefore] - work about to breach its deadline.
+    @Query("SELECT i FROM Incident i WHERE "
+        + "(:status IS NULL OR i.status = :status) AND "
+        + "(:severity IS NULL OR i.severity = :severity) AND "
+        + "(:query IS NULL OR LOWER(i.title) LIKE LOWER(CONCAT(CONCAT('%', :query), '%')) "
+        + "OR LOWER(i.description) LIKE LOWER(CONCAT(CONCAT('%', :query), '%'))) AND "
+        + "(:createdAfter IS NULL OR i.createdAt >= :createdAfter) AND "
+        + "(:createdBefore IS NULL OR i.createdAt <= :createdBefore) AND "
+        + "(:dueAfter IS NULL OR i.dueAt >= :dueAfter) AND "
+        + "(:dueBefore IS NULL OR i.dueAt <= :dueBefore) AND "
+        + "(:overdue IS NULL OR "
+        + "(:overdue = TRUE AND i.dueAt IS NOT NULL AND i.dueAt < :now AND i.status <> :resolvedStatus) OR "
+        + "(:overdue = FALSE AND (i.dueAt IS NULL OR i.dueAt >= :now OR i.status = :resolvedStatus))) AND "
+        + "(:dueSoon = FALSE OR (i.dueAt IS NOT NULL AND i.dueAt >= :now AND i.dueAt <= :dueSoonBefore "
+        + "AND i.status <> :resolvedStatus))")
+    Page<Incident> search(@Param("status") Incident.Status status,
+                          @Param("severity") Incident.Severity severity,
+                          @Param("query") String query,
+                          @Param("createdAfter") java.time.Instant createdAfter,
+                          @Param("createdBefore") java.time.Instant createdBefore,
+                          @Param("dueAfter") java.time.Instant dueAfter,
+                          @Param("dueBefore") java.time.Instant dueBefore,
+                          @Param("overdue") Boolean overdue,
+                          @Param("dueSoon") boolean dueSoon,
+                          @Param("dueSoonBefore") java.time.Instant dueSoonBefore,
+                          @Param("now") java.time.Instant now,
+                          @Param("resolvedStatus") Incident.Status resolvedStatus,
+                          Pageable pageable);
 }
